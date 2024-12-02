@@ -1,0 +1,14 @@
+<div class="chat-container">
+    <div class="chat-header">
+        <h2>Chat with {{ otherUserName }}</h2>
+    </div>
+
+    <div class="messages">
+        <div *ngFor="let message of messages" class="message">
+            <strong>{{ message.from }}:</strong> {{ message.text }}
+        </div>
+    </div>
+
+    <app-typer (sendMessage)="onSendMessage($event)"></app-typer>
+    <!-- Listen for the sendMessage event -->
+</div>

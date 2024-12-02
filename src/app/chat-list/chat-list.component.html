@@ -1,0 +1,13 @@
+<div class="p-4 bg-white rounded-lg shadow-md max-w-sm mx-auto">
+    <div *ngIf="onlineUsers.length > 0; else noUsers" class="flex flex-col items-center">
+        <h3 class="text-lg font-semibold mb-4 text-gray-700">Online Users</h3>
+        <ul class="w-full">
+            <li *ngFor="let user of onlineUsers;" (click)="startChat(user)" class="py-2 px-4 mb-2 bg-gray-100 rounded-lg flex items-center">
+                <span class="text-gray-800 text-xl">{{ user.id }}</span>
+            </li>
+        </ul>
+    </div>
+    <ng-template #noUsers>
+        <p class="text-center text-gray-500">No users online.</p>
+    </ng-template>
+</div>

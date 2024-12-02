@@ -1,0 +1,4 @@
+<div class="flex items-center border-t-2 border-gray-200 mt-4 pt-2">
+    <input [(ngModel)]="message" (keyup.enter)="onSendMessage()" placeholder="Type a message" class="w-full p-2 text-gray-700 rounded-lg" />
+    <button (click)="onSendMessage()" class="ml-2 bg-blue-500 text-white p-2 rounded-lg">Send</button>
+</div>

@@ -1,0 +1,4 @@
+<!-- message.component.html -->
+<div class="py-2 px-4 mb-2" [ngClass]="{ 'bg-blue-100': message.from === 'You', 'bg-gray-100': message.from !== 'You' }">
+    <span class="text-sm text-gray-800">{{ message.from }}: {{ message.text }}</span>
+</div>
