@@ -1,48 +1,82 @@
-import { Component, inject, OnDestroy, OnInit } from '@angular/core';
-import { Subscription } from 'rxjs';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { WebRTCService } from '../service/web-rtc.service';
+import { Subscription } from 'rxjs';
 import { CommonModule } from '@angular/common';
-import { Router } from '@angular/router';
+import { FormsModule } from '@angular/forms';
 
 @Component({
-  selector: 'app-chat-list',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
+  selector: 'app-chat-list',
   templateUrl: './chat-list.component.html',
-  styleUrls: ['./chat-list.component.css'], // Fixed 'styleUrl' to 'styleUrls'
+  styleUrls: ['./chat-list.component.css'],
 })
 export class ChatListComponent implements OnInit, OnDestroy {
   onlineUsers: { id: string; name: string }[] = [];
-  private webrtcService = inject(WebRTCService);
-  private onlineUsersSub!: Subscription;
-  constructor(private router: Router) {} // Inject Router
+  private onlineUsersSub: Subscription | null = null;
+  userName: string = '';
+  selectedUser: string | null = null;
+  userMessage: string = '';
+  chatMessages: string[] = [];
+  errorMessage: string = '';
+
+  constructor(private webrtcService: WebRTCService) {}
 
   ngOnInit() {
-    // Generate a unique name for the user
-    const userName = `User-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    // Subscribe to the online users list
+    this.onlineUsersSub = this.webrtcService.onlineUsers$.subscribe(
+      (users: { id: string; name: string }[]) => {
+        this.onlineUsers = users;
+      }
+    );
 
-    console.log('Emitting join event for user:', userName);
-    this.webrtcService.join(userName);
-
-    this.onlineUsersSub = this.webrtcService.onlineUsers$.subscribe((users) => {
-      console.log('Received online users list:', users); // Check for usernames in the log
-      this.onlineUsers = users;
+    // Subscribe to incoming messages
+    // Subscribe to incoming messages
+    this.webrtcService.messages$.subscribe((messageData) => {
+      if (messageData) {
+        // If messageData is an array, loop through it and add messages
+        if (Array.isArray(messageData)) {
+          messageData.forEach((message) => {
+            this.chatMessages.push(`${message.from}: ${message.text}`);
+          });
+        } else {
+          // If messageData is an object, directly push the message
+          this.chatMessages.push(`rr`);
+        }
+      }
     });
   }
 
-  startChat(user: { id: string; name: string }) {
-    if (user && user.id && user.name) {
-      // Use query parameters for navigation
-      this.router.navigate(['chat'], {
-        queryParams: { id: user.id, name: user.name },
-      });
-      console.error('Navigating to chat with user:', user);
+  onJoin(userName: string) {
+    if (userName.trim()) {
+      this.webrtcService.join(userName); // Send 'join' event to backend
+      this.errorMessage = ''; // Clear any previous error message
     } else {
-      console.error('User ID or Name is missing or undefined!');
+      this.errorMessage = 'Please enter a valid username!';
+    }
+  }
+
+  // Handle selecting a user to chat with
+  onSelectUser(userId: string) {
+    this.selectedUser = userId;
+    console.log(`Selected user for chat: ${userId}`);
+    this.webrtcService.connectToUser(userId); // Initiate connection to the selected user
+    this.chatMessages = []; // Clear chat history when a new user is selected
+  }
+
+  // Handle sending a message
+  onSendMessage() {
+    if (this.selectedUser && this.userMessage.trim()) {
+      this.webrtcService.sendMessage(this.selectedUser, this.userMessage);
+      this.chatMessages.push(`You: ${this.userMessage}`);
+      this.userMessage = ''; // Clear the message input after sending
+    } else {
+      this.errorMessage = 'Please enter a valid message!';
     }
   }
 
   ngOnDestroy() {
+    // Unsubscribe from the online users observable
     if (this.onlineUsersSub) {
       this.onlineUsersSub.unsubscribe();
     }

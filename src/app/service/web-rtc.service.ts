@@ -1,174 +1,173 @@
 import { Injectable } from '@angular/core';
-import { io, Socket } from 'socket.io-client';
-import { BehaviorSubject, Observable, Subject } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
+import { BehaviorSubject, Observable } from 'rxjs';
+import { io } from 'socket.io-client';
 
 @Injectable({
   providedIn: 'root',
 })
 export class WebRTCService {
-  private socket: Socket;
+  private socket: any;
   private onlineUsersSubject = new BehaviorSubject<
-    {
-      id: string;
-      name: string;
-    }[]
+    { id: string; name: string }[]
   >([]);
-  onlineUsers$ = this.onlineUsersSubject.asObservable();
-  messages$: BehaviorSubject<{ from: string; text: string }[]> =
-    new BehaviorSubject<{ from: string; text: string }[]>([]);
-  private unsubscribe$ = new Subject<void>();
-  private peerConnection: RTCPeerConnection | null = null;
-  private dataChannel: RTCDataChannel | null = null;
+  onlineUsers$: Observable<{ id: string; name: string }[]> =
+    this.onlineUsersSubject.asObservable();
+
+  private messagesSource = new BehaviorSubject<
+    { from: string; text: string }[]
+  >([]);
+  messages$ = this.messagesSource.asObservable();
+
+  private dataChannels: { [userId: string]: RTCDataChannel } = {};
+  private peerConnections: { [userId: string]: RTCPeerConnection } = {};
 
   constructor() {
-    this.socket = io('http://localhost:3000'); // Replace with your server URL
+    this.socket = io('http://localhost:5000');
 
-    // Listen for updates to the online user list from the backend
-    this.socket.on(
-      'updateUserList',
-      (users: { id: string; name: string }[]) => {
-        this.onlineUsersSubject.next(users);
-        console.log('Socket connected with ID:', this.socket.id);
-      }
-    );
-  }
+    // Listen for online users updates
+    this.socket.on('onlineUsers', (users: { id: string; name: string }[]) => {
+      console.log('Received online users:', users);
+      this.onlineUsersSubject.next(users);
+    });
 
-  // Emit a join event to the backend when the user connects
-  join(userName: string) {
-    this.socket.emit('join', userName);
-  }
-
-  // Send WebRTC signaling data to a specific user
-  sendSignal(targetId: string, signal: any) {
-    this.socket.emit('signal', { targetId, signal });
-  }
-
-  // Connect to a specific user and set up WebRTC Data Channel
-  connectToUser(userId: string) {
-    this.socket.emit('connectToUser', { targetId: userId });
-    console.log(`Connecting to user with ID: ${userId}`);
-
-    this.peerConnection = new RTCPeerConnection();
-
-    // Create the data channel
-    this.dataChannel = this.peerConnection.createDataChannel('chat');
-
-    this.dataChannel.onopen = () => {
-      console.log('Data channel opened.');
-    };
-
-    this.dataChannel.onmessage = (event) => {
-      const message = event.data;
-      console.log('Received message:', message);
-      this.messages$.next([
-        ...this.messages$.value,
-        { from: 'Other User', text: message },
-      ]);
-    };
-
-    // Create the offer and send it to the target user
-    if (this.peerConnection) {
-      this.peerConnection
-        .createOffer()
-        .then((offer) => {
-          return this.peerConnection?.setLocalDescription(offer);
-        })
-        .then(() => {
-          this.socket.emit('signal', {
-            targetId: userId,
-            signal: this.peerConnection?.localDescription,
-          });
-        });
-    }
-
-    // Listen for signaling data
-    this.onSignal().subscribe((data) => {
-      if (this.peerConnection) {
-        if (data.signal.type === 'offer') {
-          // If we receive an offer, we need to respond with an answer
-          this.peerConnection.setRemoteDescription(
-            new RTCSessionDescription(data.signal)
-          );
-          this.peerConnection
-            .createAnswer()
-            .then((answer) => {
-              return this.peerConnection?.setLocalDescription(answer);
-            })
-            .then(() => {
-              this.socket.emit('signal', {
-                targetId: data.senderId,
-                signal: this.peerConnection?.localDescription,
-              });
-            });
-        } else if (data.signal.type === 'answer') {
-          // If we receive an answer, set it as remote description
-          this.peerConnection.setRemoteDescription(
-            new RTCSessionDescription(data.signal)
-          );
-        }
-
-        // Add ICE candidates to peer connection
-        if (data.signal.candidate) {
-          this.peerConnection.addIceCandidate(
-            new RTCIceCandidate(data.signal.candidate)
-          );
-        }
+    // Listen for a signaling message (offer, answer, ice candidate)
+    this.socket.on('signal', (data: any) => {
+      const { userId, signalType, signalData } = data;
+      if (signalType === 'offer') {
+        this.handleOffer(userId, signalData);
+      } else if (signalType === 'answer') {
+        this.handleAnswer(userId, signalData);
+      } else if (signalType === 'candidate') {
+        this.handleCandidate(userId, signalData);
       }
     });
   }
 
-  // Send a message to the connected user via the data channel
-  sendMessage(targetId: string, message: string) {
-    if (this.dataChannel) {
-      if (this.dataChannel.readyState === 'open') {
-        this.dataChannel.send(message);
-        console.log('Message sent:', message);
-      } else {
-        console.warn('Data channel is not open yet. Queuing message.');
-        // Queue message for sending once the data channel is open
-        this.queueMessage(message);
+  // Join the chat with a username
+  join(userName: string) {
+    console.log('Joining chat with username:', userName);
+    this.socket.emit('join', userName);
+  }
+
+  connectToUser(userId: string) {
+    const peerConnection = new RTCPeerConnection();
+    const dataChannel = peerConnection.createDataChannel('chat');
+
+    // Handle opening of the data channel
+    dataChannel.onopen = () => {
+      console.log(`Data channel for ${userId} is open`);
+    };
+
+    // Handle incoming messages
+    dataChannel.onmessage = (event) => {
+      console.log(`Message from ${userId}: ${event.data}`);
+      this.messagesSource.next([
+        ...this.messagesSource.value,
+        { from: userId, text: event.data },
+      ]);
+    };
+
+    this.dataChannels[userId] = dataChannel;
+    this.peerConnections[userId] = peerConnection;
+
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        this.socket.emit('signal', {
+          userId,
+          signalType: 'candidate',
+          signalData: event.candidate,
+        });
       }
-    } else {
-      console.warn('No data channel established.');
-    }
-  }
+    };
 
-  // This function will handle queued messages
-  queueMessage(message: string) {
-    // Store messages locally in a queue until the data channel opens
-    this.messages$.next([
-      ...this.messages$.value,
-      { from: 'You (queued)', text: message },
-    ]);
-  }
-
-  // Listen for incoming signaling data
-  onSignal(): Observable<{ senderId: string; signal: any }> {
-    return new Observable<{ senderId: string; signal: any }>((observer) => {
-      this.socket.on('signal', (data: { senderId: string; signal: any }) => {
-        observer.next(data);
+    // Create offer and send to receiver
+    peerConnection
+      .createOffer()
+      .then((offer) => {
+        return peerConnection.setLocalDescription(offer);
+      })
+      .then(() => {
+        this.socket.emit('signal', {
+          userId,
+          signalType: 'offer',
+          signalData: peerConnection.localDescription,
+        });
       });
-    }).pipe(takeUntil(this.unsubscribe$)); // Automatically unsubscribe when unsubscribe$ emits
   }
 
-  // Clean up the peer connection and data channel
-  cleanupPeerConnection() {
-    if (this.peerConnection) {
-      this.peerConnection.close();
-      console.log('Peer connection closed.');
-      this.peerConnection = null;
-    }
-    if (this.dataChannel) {
-      this.dataChannel.close();
-      console.log('Data channel closed.');
-      this.dataChannel = null;
+  // Handle incoming offer
+  handleOffer(userId: string, offer: RTCSessionDescriptionInit) {
+    const peerConnection = this.peerConnections[userId];
+
+    // Check if peer connection exists and set the remote description
+    if (peerConnection) {
+      peerConnection
+        .setRemoteDescription(new RTCSessionDescription(offer))
+        .then(() => {
+          const dataChannel = peerConnection.createDataChannel('chat');
+
+          dataChannel.onopen = () => {
+            console.log(`Data channel for ${userId} is open`);
+          };
+
+          dataChannel.onmessage = (event) => {
+            console.log(`Message from ${userId}: ${event.data}`);
+            this.messagesSource.next([
+              ...this.messagesSource.value,
+              { from: userId, text: event.data },
+            ]);
+          };
+
+          this.dataChannels[userId] = dataChannel;
+
+          return peerConnection.createAnswer();
+        })
+        .then((answer) => {
+          return peerConnection.setLocalDescription(answer);
+        })
+        .then(() => {
+          this.socket.emit('signal', {
+            userId,
+            signalType: 'answer',
+            signalData: peerConnection.localDescription,
+          });
+        })
+        .catch((error) => {
+          console.error('Error handling offer:', error);
+        });
     }
   }
 
-  ngOnDestroy() {
-    this.unsubscribe$.next();
-    this.unsubscribe$.complete();
-    this.cleanupPeerConnection(); // Ensure cleanup on component destroy
+  // Handle incoming answer
+  handleAnswer(userId: string, answer: RTCSessionDescriptionInit) {
+    const peerConnection = this.peerConnections[userId];
+    peerConnection
+      .setRemoteDescription(new RTCSessionDescription(answer))
+      .catch((error) => {
+        console.error('Error handling answer:', error);
+      });
+  }
+
+  // Send a message to a connected user
+  sendMessage(userId: string, message: string) {
+    const dataChannel = this.dataChannels[userId];
+
+    if (dataChannel && dataChannel.readyState === 'open') {
+      dataChannel.send(message);
+      this.messagesSource.next([
+        ...this.messagesSource.value,
+        { from: 'You', text: message },
+      ]);
+    } else {
+      console.log(
+        `Data channel for ${userId} is not open, can't send message.`
+      );
+    }
+  }
+
+  // Handle incoming ICE candidate
+  handleCandidate(userId: string, candidate: RTCIceCandidateInit) {
+    const peerConnection = this.peerConnections[userId];
+    peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
   }
 }

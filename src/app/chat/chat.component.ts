@@ -1,16 +1,14 @@
-import { Component, inject, OnDestroy, OnInit } from '@angular/core';
-import { TyperComponent } from '../typer/typer.component';
-import { MessageComponent } from '../message/message.component';
-import { FormsModule } from '@angular/forms';
+import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { WebRTCService } from '../service/web-rtc.service';
-import { CommonModule } from '@angular/common';
 import { Subscription } from 'rxjs';
 import { ActivatedRoute } from '@angular/router';
+import { CommonModule } from '@angular/common';
+import { TyperComponent } from '../typer/typer.component';
 
 @Component({
   selector: 'app-chat',
   standalone: true,
-  imports: [TyperComponent, FormsModule, CommonModule],
+  imports: [TyperComponent, CommonModule],
   templateUrl: './chat.component.html',
   styleUrls: ['./chat.component.css'],
 })
@@ -21,6 +19,7 @@ export class ChatComponent implements OnInit, OnDestroy {
   private messagesSub: Subscription | null = null;
   private webrtcService = inject(WebRTCService);
   private route = inject(ActivatedRoute);
+  userName: string = '';
 
   ngOnInit() {
     this.route.queryParams.subscribe((params) => {
@@ -49,21 +48,18 @@ export class ChatComponent implements OnInit, OnDestroy {
   onSendMessage(message: string) {
     if (message.trim()) {
       console.log('Sending message to user:', message);
-      // Send the message to the other user
       this.webrtcService.sendMessage(this.userId, message);
 
-      // Add the message to the local chat history
       this.messages.push({ from: 'You', text: message });
     }
   }
+  joinChat() {
+    this.webrtcService.join(this.userName); // Emit 'join' event to the backend
+  }
 
   ngOnDestroy() {
-    // Clean up subscriptions to prevent memory leaks
     if (this.messagesSub) {
-      console.log('Unsubscribing from message subscription.');
       this.messagesSub.unsubscribe();
-    } else {
-      console.warn('No active subscription found to unsubscribe.');
     }
   }
 }
