@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { io } from 'socket.io-client';
+import { ChatMessage } from '../Interfaces/chat-message.interface';
 
 @Injectable({
   providedIn: 'root',
@@ -13,24 +14,22 @@ export class WebRTCService {
   onlineUsers$: Observable<{ id: string; name: string }[]> =
     this.onlineUsersSubject.asObservable();
 
-  private messagesSource = new BehaviorSubject<
-    { from: string; text: string }[]
-  >([]);
+  private messagesSource = new BehaviorSubject<ChatMessage[]>([]);
   messages$ = this.messagesSource.asObservable();
 
   private dataChannels: { [userId: string]: RTCDataChannel } = {};
   private peerConnections: { [userId: string]: RTCPeerConnection } = {};
 
+  private messageIds: Set<string> = new Set(); // Set to track message IDs
+
   constructor() {
     this.socket = io('http://localhost:5000');
 
-    // Listen for online users updates
     this.socket.on('onlineUsers', (users: { id: string; name: string }[]) => {
       console.log('Received online users:', users);
       this.onlineUsersSubject.next(users);
     });
 
-    // Listen for a signaling message (offer, answer, ice candidate)
     this.socket.on('signal', (data: any) => {
       const { userId, signalType, signalData } = data;
       if (signalType === 'offer') {
@@ -43,7 +42,6 @@ export class WebRTCService {
     });
   }
 
-  // Join the chat with a username
   join(userName: string) {
     console.log('Joining chat with username:', userName);
     this.socket.emit('join', userName);
@@ -53,18 +51,24 @@ export class WebRTCService {
     const peerConnection = new RTCPeerConnection();
     const dataChannel = peerConnection.createDataChannel('chat');
 
-    // Handle opening of the data channel
     dataChannel.onopen = () => {
       console.log(`Data channel for ${userId} is open`);
     };
 
-    // Handle incoming messages
     dataChannel.onmessage = (event) => {
       console.log(`Message from ${userId}: ${event.data}`);
-      this.messagesSource.next([
-        ...this.messagesSource.value,
-        { from: userId, text: event.data },
-      ]);
+      const message: ChatMessage = {
+        from: userId,
+        to: 'You', // Assuming messages from a user to you
+        text: event.data,
+        id: this.generateMessageId(),
+      };
+
+      // Avoid duplicate messages
+      if (!this.messageIds.has(message.id)) {
+        this.messageIds.add(message.id);
+        this.messagesSource.next([...this.messagesSource.value, message]);
+      }
     };
 
     this.dataChannels[userId] = dataChannel;
@@ -80,12 +84,9 @@ export class WebRTCService {
       }
     };
 
-    // Create offer and send to receiver
     peerConnection
       .createOffer()
-      .then((offer) => {
-        return peerConnection.setLocalDescription(offer);
-      })
+      .then((offer) => peerConnection.setLocalDescription(offer))
       .then(() => {
         this.socket.emit('signal', {
           userId,
@@ -95,36 +96,36 @@ export class WebRTCService {
       });
   }
 
-  // Handle incoming offer
   handleOffer(userId: string, offer: RTCSessionDescriptionInit) {
     const peerConnection = this.peerConnections[userId];
-
-    // Check if peer connection exists and set the remote description
     if (peerConnection) {
       peerConnection
         .setRemoteDescription(new RTCSessionDescription(offer))
         .then(() => {
           const dataChannel = peerConnection.createDataChannel('chat');
-
           dataChannel.onopen = () => {
             console.log(`Data channel for ${userId} is open`);
           };
 
           dataChannel.onmessage = (event) => {
             console.log(`Message from ${userId}: ${event.data}`);
-            this.messagesSource.next([
-              ...this.messagesSource.value,
-              { from: userId, text: event.data },
-            ]);
+            const message: ChatMessage = {
+              from: userId,
+              to: 'You', // Assuming messages from a user to you
+              text: event.data,
+              id: this.generateMessageId(),
+            };
+
+            if (!this.messageIds.has(message.id)) {
+              this.messageIds.add(message.id);
+              this.messagesSource.next([...this.messagesSource.value, message]);
+            }
           };
 
           this.dataChannels[userId] = dataChannel;
-
           return peerConnection.createAnswer();
         })
-        .then((answer) => {
-          return peerConnection.setLocalDescription(answer);
-        })
+        .then((answer) => peerConnection.setLocalDescription(answer))
         .then(() => {
           this.socket.emit('signal', {
             userId,
@@ -138,7 +139,6 @@ export class WebRTCService {
     }
   }
 
-  // Handle incoming answer
   handleAnswer(userId: string, answer: RTCSessionDescriptionInit) {
     const peerConnection = this.peerConnections[userId];
     peerConnection
@@ -148,16 +148,21 @@ export class WebRTCService {
       });
   }
 
-  // Send a message to a connected user
   sendMessage(userId: string, message: string) {
     const dataChannel = this.dataChannels[userId];
-
     if (dataChannel && dataChannel.readyState === 'open') {
+      const messageObj: ChatMessage = {
+        from: 'You',
+        to: userId,
+        text: message,
+        id: this.generateMessageId(),
+      };
+
       dataChannel.send(message);
-      this.messagesSource.next([
-        ...this.messagesSource.value,
-        { from: 'You', text: message },
-      ]);
+      if (!this.messageIds.has(messageObj.id)) {
+        this.messageIds.add(messageObj.id);
+        this.messagesSource.next([...this.messagesSource.value, messageObj]);
+      }
     } else {
       console.log(
         `Data channel for ${userId} is not open, can't send message.`
@@ -165,9 +170,12 @@ export class WebRTCService {
     }
   }
 
-  // Handle incoming ICE candidate
   handleCandidate(userId: string, candidate: RTCIceCandidateInit) {
     const peerConnection = this.peerConnections[userId];
     peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+  }
+
+  private generateMessageId(): string {
+    return Math.random().toString(36).substr(2, 9); // Generate a unique ID for each message
   }
 }

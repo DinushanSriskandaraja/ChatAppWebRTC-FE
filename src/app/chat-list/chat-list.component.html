@@ -1,22 +1,49 @@
-<div>
-    <input [(ngModel)]="userName" placeholder="Enter your name" />
-    <button (click)="onJoin(userName)">Join</button>
-</div>
-
-<div *ngIf="onlineUsers.length">
-    <h3>Online Users:</h3>
-    <ul>
-        <li *ngFor="let user of onlineUsers" (click)="onSelectUser(user.id)">
-            {{ user.name }} (ID: {{ user.id }})
-        </li>
-    </ul>
-</div>
-
-<div *ngIf="selectedUser">
-    <h3>Chatting with: {{ selectedUser }}</h3>
-    <div *ngFor="let message of chatMessages">
-        <p>{{ message }}</p>
+<div class="flex flex-col h-screen p-4">
+    <!-- Chat Header -->
+    <div class="flex items-center justify-between mb-4">
+        <h2 class="text-2xl font-semibold text-gray-700">Chat</h2>
+        <button *ngIf="selectedUser" class="text-sm text-blue-500 hover:underline" (click)="selectedUser = null">
+            Leave Chat
+        </button>
     </div>
-    <input [(ngModel)]="userMessage" placeholder="Type a message" />
-    <button (click)="onSendMessage()">Send</button>
+
+    <!-- User List Section (Horizontal Scroll) -->
+    <div class="flex overflow-x-auto space-x-4 mb-4 py-2">
+        <div *ngIf="onlineUsers.length === 0" class="text-center text-gray-500 flex-shrink-0">
+            No users online.
+        </div>
+        <div *ngFor="let user of onlineUsers" (click)="onSelectUser(user.id)" class="cursor-pointer p-3 bg-gray-100 rounded-lg shadow-md hover:bg-gray-200 transition w-32 flex-shrink-0 flex items-center justify-center">
+            <p class="text-lg font-medium truncate text-center">{{ user.name }}</p>
+        </div>
+    </div>
+
+    <!-- Chat Section -->
+    <div *ngIf="selectedUser" class="flex flex-col h-full border-t-2 border-gray-300 pt-4">
+        <!-- Chat Messages -->
+        <div class="flex-1 overflow-y-auto space-y-3 px-4 py-2">
+            <div *ngFor="let message of chatMessages" class="message">
+                <p class="text-sm">
+                    <span class="font-medium">{{ message.split(': ')[0] }}:</span> {{ message.split(': ')[1] }}
+                </p>
+            </div>
+        </div>
+
+        <!-- Send Message Section -->
+        <div class="flex items-center mt-4 space-x-2">
+            <input [(ngModel)]="userMessage" type="text" placeholder="Type a message..." class="w-full p-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <button (click)="onSendMessage()" class="bg-blue-500 text-white p-3 rounded-lg hover:bg-blue-600 transition">
+                Send
+            </button>
+        </div>
+        <div *ngIf="errorMessage" class="mt-2 text-red-500 text-sm">{{ errorMessage }}</div>
+    </div>
+
+    <!-- Join Section -->
+    <div *ngIf="!selectedUser" class="flex flex-col items-center justify-center h-full">
+        <input [(ngModel)]="userName" type="text" placeholder="Enter your name" class="p-3 border border-gray-300 rounded-lg mb-4" />
+        <button (click)="onJoin(userName)" class="bg-blue-500 text-white p-3 rounded-lg hover:bg-blue-600 transition">
+            Join Chat
+        </button>
+        <div *ngIf="errorMessage" class="mt-2 text-red-500 text-sm">{{ errorMessage }}</div>
+    </div>
 </div>

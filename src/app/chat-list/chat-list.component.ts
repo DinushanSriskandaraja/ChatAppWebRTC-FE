@@ -3,6 +3,9 @@ import { WebRTCService } from '../service/web-rtc.service';
 import { Subscription } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ChatMessage } from '../Interfaces/chat-message.interface'; // Correct import
+
+// import { ChatMessage } from '../service/web-rtc.service'; // Import ChatMessage interface
 
 @Component({
   standalone: true,
@@ -14,11 +17,14 @@ import { FormsModule } from '@angular/forms';
 export class ChatListComponent implements OnInit, OnDestroy {
   onlineUsers: { id: string; name: string }[] = [];
   private onlineUsersSub: Subscription | null = null;
+  private messagesSub: Subscription | null = null;
+
   userName: string = '';
   selectedUser: string | null = null;
   userMessage: string = '';
   chatMessages: string[] = [];
   errorMessage: string = '';
+  private messageIds: Set<string> = new Set(); // Track received message IDs to avoid duplicates
 
   constructor(private webrtcService: WebRTCService) {}
 
@@ -31,20 +37,30 @@ export class ChatListComponent implements OnInit, OnDestroy {
     );
 
     // Subscribe to incoming messages
-    // Subscribe to incoming messages
-    this.webrtcService.messages$.subscribe((messageData) => {
-      if (messageData) {
-        // If messageData is an array, loop through it and add messages
-        if (Array.isArray(messageData)) {
-          messageData.forEach((message) => {
-            this.chatMessages.push(`${message.from}: ${message.text}`);
-          });
-        } else {
-          // If messageData is an object, directly push the message
-          this.chatMessages.push(`rr`);
+    this.messagesSub = this.webrtcService.messages$.subscribe(
+      (messageData: ChatMessage | ChatMessage[]) => {
+        if (messageData) {
+          // If messageData is an array, loop through it and add messages
+          if (Array.isArray(messageData)) {
+            messageData.forEach((message: ChatMessage) => {
+              if (!this.messageIds.has(message.id)) {
+                this.messageIds.add(message.id); // Mark this message as processed
+                if (message.from === this.selectedUser) {
+                  this.chatMessages.push(`${message.from}: ${message.text}`);
+                }
+              }
+            });
+          } else if (!this.messageIds.has(messageData.id)) {
+            this.messageIds.add(messageData.id);
+            if (messageData.from === this.selectedUser) {
+              this.chatMessages.push(
+                `${messageData.from}: ${messageData.text}`
+              );
+            }
+          }
         }
       }
-    });
+    );
   }
 
   onJoin(userName: string) {
@@ -62,6 +78,7 @@ export class ChatListComponent implements OnInit, OnDestroy {
     console.log(`Selected user for chat: ${userId}`);
     this.webrtcService.connectToUser(userId); // Initiate connection to the selected user
     this.chatMessages = []; // Clear chat history when a new user is selected
+    this.messageIds.clear(); // Clear message ID tracking
   }
 
   // Handle sending a message
@@ -76,9 +93,12 @@ export class ChatListComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
-    // Unsubscribe from the online users observable
+    // Unsubscribe from all subscriptions
     if (this.onlineUsersSub) {
       this.onlineUsersSub.unsubscribe();
+    }
+    if (this.messagesSub) {
+      this.messagesSub.unsubscribe();
     }
   }
 }
