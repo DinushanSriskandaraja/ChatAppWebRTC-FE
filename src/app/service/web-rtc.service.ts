@@ -23,7 +23,7 @@ export class WebRTCService {
   private messageIds: Set<string> = new Set(); // Set to track message IDs
 
   constructor() {
-    this.socket = io('http://localhost:5000');
+    this.socket = io('https://djatbe-f58917b6514c.herokuapp.com/');
 
     this.socket.on('onlineUsers', (users: { id: string; name: string }[]) => {
       console.log('Received online users:', users);
