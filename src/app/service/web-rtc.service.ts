@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { io } from 'socket.io-client';
 import { ChatMessage } from '../Interfaces/chat-message.interface';
+import { environment } from '../../enviroments/enviroment';
 
 @Injectable({
   providedIn: 'root',
@@ -23,7 +24,7 @@ export class WebRTCService {
   private messageIds: Set<string> = new Set(); // Set to track message IDs
 
   constructor() {
-    this.socket = io('https://djatbe-f58917b6514c.herokuapp.com/');
+    this.socket = io(environment.SOCKET_SERVER_URL);
 
     this.socket.on('onlineUsers', (users: { id: string; name: string }[]) => {
       console.log('Received online users:', users);
